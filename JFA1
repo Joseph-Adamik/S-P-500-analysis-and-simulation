@@ -29,7 +29,6 @@ for i in range(0,len(symbol)):
     df[symbol[i]] = (yf.download(symbol[i], start=tmin1, end=t0)).Close
 df2 = np.log(df/df.shift())
 df.head()
-df3.describe()
 from matplotlib import style
 style.use("ggplot")
 plt.rcParams["figure.figsize"] = (20,10)
@@ -49,6 +48,7 @@ df3 = pd.DataFrame()
 df3['Average'] = mean
 df3['Sector'] = sector[0:]
 #df3.head()
+df3.describe() # find stats for any security in the index
 df3[df3['Average'] < -0.002].plot(kind = 'bar')
 df3[df3['Sector'] == 'Real Estate'].plot(kind = 'bar', title = 'Real Estate')
 plt.show()
