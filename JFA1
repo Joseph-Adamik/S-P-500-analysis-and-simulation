@@ -1,0 +1,146 @@
+import math
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+from scipy.optimize import linprog
+import pandas_datareader.data as data
+import datetime
+from datetime import timedelta
+import yfinance as yf
+from scipy.optimize import minimize
+table=pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
+symbol = table[0]
+symbol = symbol['Symbol']
+sector = table[0]['GICS Sector']
+len(sector)
+len(symbol)
+sector.index = symbol
+symbol = symbol.str.replace('BRK.B', 'BRK-B')
+symbol = symbol.str.replace('BF.B', 'BF-B')
+t0 = datetime.date.today()
+year = timedelta(days=365)
+tmin1 = t0-year
+## I plan on expanding the research to include P/E into the analysis 
+yf.Ticker("MSFT").info['forwardPE']
+##But for now this is jost storing code, below is the main source:  Bar data from yahoo.  It takes a while to run
+df = pd.DataFrame()
+for i in range(0,len(symbol)):
+    df[symbol[i]] = (yf.download(symbol[i], start=tmin1, end=t0)).Close
+df2 = np.log(df/df.shift())
+df.head()
+df3.describe()
+from matplotlib import style
+style.use("ggplot")
+plt.rcParams["figure.figsize"] = (20,10)
+mean = df2.mean()
+gainers = mean[mean > 0.0025]
+plt.title('52 Week S&P Gainers')
+gainers.plot(kind = 'bar',color = 'orange')
+losers = mean[mean < -.002 ]
+plt.title('52 week S&P Losers')
+losers.plot(kind = 'bar')
+vol = df2.std()
+plt.title('52 week S&P Highest Volatility')
+vol[vol > .065].plot(kind = 'bar')
+plt.title('52 week S&P Lowest Volatility')
+vol[vol < .02].plot(kind= 'bar', color = 'green')
+df3 = pd.DataFrame()
+df3['Average'] = mean
+df3['Sector'] = sector[0:]
+#df3.head()
+df3[df3['Average'] < -0.002].plot(kind = 'bar')
+df3[df3['Sector'] == 'Real Estate'].plot(kind = 'bar', title = 'Real Estate')
+plt.show()
+df3[df3['Sector'] == 'Financials'].plot(kind = 'bar', color = 'green', title = 'Financials')
+Sector = ('Industrials','Health Care','Information Technology','Consumer Discretionary','Financials',\
+          'Communication Services','Consumer Staples','Utilities','Materials','Energy','Real Estate')
+SP = pd.DataFrame(np.ones((len(Sector),1)))
+
+for i in range( 0, len(Sector) ):
+    SP[0][ i ] =  df3.Average[df3.Sector == Sector[i]].mean()
+plt.rcParams["figure.figsize"] = (15,5)
+SP.index = Sector
+SP.plot(kind = 'bar',title = 'Overal Sector P&L', color = 'purple')
+St = df[gainers.index.values].iloc[len(df)-1:len(df),0:].values
+St
+Sigma = df2[gainers.index.values].std().values
+curtime = 1.0
+drift = 0.0000019
+prices = np.zeros( ( 1000, 25 ) )
+
+def simulator(st,sigma):
+    for i in range( 0, 25 ):
+        prices[ 0 ][ i ] = st
+    for col in range( 0, 25 ):
+        for row in range( 1, 1000 ):
+            prices[ row ][ col ] = prices[ row - 1 ][ col ] * math.exp\
+            ( drift * curtime - 0.5 * math.pow( sigma, 2 ) * curtime + sigma *  np.random.normal( 0, 1, 1 ) )
+    stock_ret = np.log((prices[999].sum()/25)/st)
+    
+    return stock_ret
+
+simulator(100, .0001)
+plt.title('Theoretical Price Paths using GBM')
+plt.plot(prices)
+plt.show()
+k = pd.DataFrame(np.ones((len(gainers),1)))
+
+for j in range( 0, len(gainers) ):
+    k[0 ][ j ] =  simulator(St[0,j],Sigma[j])
+    
+k.plot(kind = 'bar')
+covar_mat = df2[gainers.index].cov()
+pd.set_option('display.float_format', lambda x: '%.3f' % x)
+weights = np.zeros( ( k.size, ), dtype = float )
+R = np.array( [ k.T] )
+target_return = 0.09
+
+# Set up the objective function to calculate annualized portfolio volatility.
+def objective( w, V ):
+    return np.sqrt( w.dot( V.dot( w.T ) ) * 252.0 )
+def constraint2( w, rets, tgt ): # Expected return must be greater than the target.
+    return rets.dot( w.T ) * 252.0 - tgt
+cons = ( [{ 'type' : 'ineq', 'fun' : lambda weights : constraint2( weights, R, target_return ) }] )
+# Set up the non-negativity bounds on all three weights
+b = (0.0,None)
+bounds = [(b)]*k.size
+# Run the minimization using SLSQP
+
+solution = minimize( objective, weights, covar_mat, method = 'SLSQP', bounds = bounds, constraints = cons )
+# Grab the vector of optimized weights.
+optimal_weights = solution.x
+# Show the minimized value of the objective function
+print( '\nMinimized Volatility Given Target Return of: ', round( target_return, 4 ) )
+print( '\n', round( objective( optimal_weights, covar_mat ), 4 ) )
+# Print the optimal weights.
+print( '\nOptimal Weights:\n' )
+for i in range(0,k.size):
+    print(  gainers.index[i],' = ', round( optimal_weights[ i ], 4 ),sector[gainers.index[i]] )
+portfolio = pd.DataFrame()
+portfolio['Weights'] =optimal_weights
+portfolio.index = gainers.index
+portfolio['Sector'] = sector[gainers.index]
+p1 = portfolio[portfolio.Weights > 0.000001]
+p1
+labels = p1.index
+marketshare = p1.Weights/p1.Weights.sum()
+explode = (np.zeros(len(p1)))
+plt.pie(marketshare,
+explode = explode, # fraction of the radius with which to
+# offset each wedge
+labels = labels,
+autopct="%.1f%%", # string or function used to label the
+# wedges with their numeric value
+shadow=True,
+startangle=45) # rotates the start of the pie chart by
+# angle degrees counterclockwise from the
+# x-axis
+plt.axis("equal") # turns off the axis lines and labels
+plt.title("Portfolio Marketshare - 2021 FICTIONAL FORECAST")
+plt.legend(labels, loc="best")
+plt.show()
+
+#Clearly, any stock with a negative return would not be included in the portfolio allocation. 
+#It would be interesting to see the comparison of the randomly generated portfolio compared to the real data for the forecasted, 
+#but it should be noted that this is an exercise in simulation, not forecasting.
